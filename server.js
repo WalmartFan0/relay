@@ -1,3 +1,5 @@
+// ✅ FULL UPDATED server.js — Feature Complete (Roles, Admin Tools, Bans, Console)
+
 const express = require('express');
 const path = require('path');
 const bodyParser = require('body-parser');
@@ -11,13 +13,11 @@ const db = new sqlite3.Database(path.join(dataDir, 'users.db'));
 
 const app = express();
 
-
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(session({ secret: 'secret-key', resave: false, saveUninitialized: true }));
 app.use(express.static('public'));
 
 // Create tables
-
 db.run(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE,
@@ -46,7 +46,6 @@ db.run(`CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 )`);
 
-// Helper to get site message
 function getSiteMessage(callback) {
   db.get('SELECT value FROM settings WHERE key = "site_message"', [], (err, row) => {
     callback(row ? row.value : '');
@@ -57,6 +56,10 @@ function isValidUsername(username) {
   const noSpecials = /^[a-zA-Z0-9]+$/;
   const notAllDigits = /\D/;
   return noSpecials.test(username) && notAllDigits.test(username);
+}
+
+function isAdmin(user) {
+  return user?.username === 'chris' || user?.is_admin;
 }
 
 function formatUserDisplay(user) {
