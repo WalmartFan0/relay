@@ -25,7 +25,12 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
   bio TEXT DEFAULT '',
   avatar TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  is_admin INTEGER DEFAULT 0
+  is_admin INTEGER DEFAULT 0,
+  roles TEXT DEFAULT '',
+  banned INTEGER DEFAULT 0,
+  darkmode INTEGER DEFAULT 0,
+  verified INTEGER DEFAULT 0,
+  official INTEGER DEFAULT 0
 )`);
 
 db.run(`CREATE TABLE IF NOT EXISTS posts (
@@ -48,6 +53,28 @@ function getSiteMessage(callback) {
   });
 }
 
+function isValidUsername(username) {
+  const noSpecials = /^[a-zA-Z0-9]+$/;
+  const notAllDigits = /\D/;
+  return noSpecials.test(username) && notAllDigits.test(username);
+}
+
+function formatUserDisplay(user) {
+  const roles = [];
+  if (user.username === 'chris') roles.push('<span style="color:red">Owner</span>');
+  if (user.is_admin) roles.push('<span style="color:red">Admin</span>');
+  if (user.verified) roles.push('<span style="color:green">Verified</span>');
+  if (user.official) roles.push('<span style="color:blue">Official</span>');
+  try {
+    const customRoles = JSON.parse(user.roles || '[]');
+    roles.push(...customRoles.map(r => `<span style="color:${r.color}">${r.name}</span>`));
+  } catch {}
+  const roleStr = roles.length ? ` (${roles.join(', ')})` : '';
+  const name = user.banned ? `<s>${user.username}</s>` : user.username;
+  return `${name}${roleStr}`;
+}
+
+
 // Home route
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public/index.html'));
@@ -63,12 +90,18 @@ app.get('/signup', (req, res) => {
 
 app.post('/signup', async (req, res) => {
   const { username, password } = req.body;
+
+  if (!isValidUsername(username)) {
+    return res.send('Invalid username. Only letters and numbers allowed. Cannot be all numbers.');
+  }
+
   const hashed = await bcrypt.hash(password, 10);
   db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashed], (err) => {
     if (err) return res.send('Username taken.');
     res.redirect('/login');
   });
 });
+
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
@@ -110,7 +143,7 @@ app.get('/board', (req, res) => {
         html += `<hr>`;
 
         rows.forEach((row) => {
-          html += `<p><strong><a href="/user/${row.username}">${row.username}</a></strong> (${row.created_at}):<br>${row.content}`;
+          html += `<p><strong><a href="/user/${row.username}">${row.username}</a></strong> (ID #${row.id}, ${row.created_at}):<br>${row.content}`;
           if (currentUser.id === row.uid) {
             html += ` <form method="POST" action="/delete-post" style="display:inline">
                         <input type="hidden" name="post_id" value="${row.id}" />
@@ -188,6 +221,36 @@ app.post('/admin/console', (req, res) => {
     res.send('Unknown command');
   }
 });
+
+function isAdmin(user) {
+  return user?.username === 'chris' || user?.is_admin;
+}
+
+app.get('/admin/tools', (req, res) => {
+  if (!req.session.user || !isAdmin(req.session.user)) return res.send('Access denied');
+
+  let html = `<h2>Admin Tools</h2>
+    <form method="POST" action="/admin/ban">
+      <input name="user" placeholder="User to ban"><button type="submit">Ban</button>
+    </form>
+    <form method="POST" action="/admin/edit-message">
+      <input name="id" placeholder="Message ID"><br>
+      <textarea name="newText" placeholder="New content"></textarea><br>
+      <button type="submit">Edit Message</button>
+    </form>
+    <form method="POST" action="/admin/delete-message">
+      <input name="id" placeholder="Message ID"><button type="submit">Delete</button>
+    </form>
+    <form method="POST" action="/admin/verify">
+      <input name="user" placeholder="Username"><button name="action" value="verify">Verify</button><button name="action" value="unverify">Unverify</button>
+    </form>
+    <form method="POST" action="/admin/officiate">
+      <input name="user" placeholder="Username"><button name="action" value="on">Officiate</button><button name="action" value="off">Unofficiate</button>
+    </form>
+    <a href="/board">Back</a>`;
+  res.send(html);
+});
+
 
 // (Keep the rest of your profile, post, and user routes unchanged)
 // ... (same as before)
