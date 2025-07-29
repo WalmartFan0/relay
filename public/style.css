@@ -1,0 +1,29 @@
+body {
+  font-family: monospace;
+  background-color: #f0f0f0;
+  color: #333;
+  max-width: 700px;
+  margin: auto;
+  padding: 20px;
+}
+
+textarea, input {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+form {
+  background: #fff;
+  padding: 10px;
+  border: 1px solid #aaa;
+}
+
+a {
+  color: blue;
+}
+
+hr {
+  border: none;
+  border-top: 1px dashed #999;
+  margin: 20px 0;
+}
