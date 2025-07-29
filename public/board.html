@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h2>Message Board</h2>
+
+    <form method="POST" action="/post">
+      <textarea name="content" placeholder="Write something..." required></textarea><br>
+      <button type="submit">Post</button>
+    </form>
+
+    <div id="messages">
+      <!-- Messages will be filled in by the server -->
+    </div>
+  </body>
+</html>
