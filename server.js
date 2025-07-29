@@ -191,6 +191,47 @@ app.post('/admin/console', (req, res) => {
 
 // (Keep the rest of your profile, post, and user routes unchanged)
 // ... (same as before)
+// ... everything above remains the same
 
+// ✅ Add profile page route
+app.get('/profile', (req, res) => {
+  if (!req.session.user) return res.redirect('/login');
+  const userId = req.session.user.id;
+
+  db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
+    db.all('SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC', [userId], (err2, posts) => {
+      let html = `<h2>${user.username}'s Profile</h2>`;
+      if (user.avatar) html += `<img src="${user.avatar}" width="100"><br>`;
+      html += `<p>${user.bio}</p><hr>`;
+      posts.forEach((p) => {
+        html += `<p>${p.created_at}: ${p.content}</p><hr>`;
+      });
+      res.send(html);
+    });
+  });
+});
+
+// ✅ Add public user profile route
+app.get('/user/:username', (req, res) => {
+  const username = req.params.username;
+
+  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
+    if (!user) return res.send('User not found');
+    db.all('SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC', [user.id], (err2, posts) => {
+      let html = `<h2>${user.username}'s Public Profile</h2>`;
+      if (user.avatar) html += `<img src="${user.avatar}" width="100"><br>`;
+      html += `<p>${user.bio}</p><hr>`;
+      posts.forEach((p) => {
+        html += `<p>${p.created_at}: ${p.content}</p><hr>`;
+      });
+      res.send(html);
+    });
+  });
+});
+
+// ✅ Start server
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+  console.log('SQLite DB Path:', path.join(dataDir, 'users.db'));
+});
