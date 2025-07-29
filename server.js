@@ -18,14 +18,14 @@ app.use(express.static('public'));
 
 // Create tables
 
-// Add bio and created_at to users
 db.run(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE,
   password TEXT,
   bio TEXT DEFAULT '',
   avatar TEXT DEFAULT '',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  is_admin INTEGER DEFAULT 0
 )`);
 
 db.run(`CREATE TABLE IF NOT EXISTS posts (
@@ -35,6 +35,18 @@ db.run(`CREATE TABLE IF NOT EXISTS posts (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(user_id) REFERENCES users(id)
 )`);
+
+db.run(`CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+)`);
+
+// Helper to get site message
+function getSiteMessage(callback) {
+  db.get('SELECT value FROM settings WHERE key = "site_message"', [], (err, row) => {
+    callback(row ? row.value : '');
+  });
+}
 
 // Home route
 app.get('/', (req, res) => {
@@ -80,34 +92,38 @@ app.get('/board', (req, res) => {
   if (!req.session.user) return res.redirect('/login');
   const currentUser = req.session.user;
 
-  db.all(
-    `SELECT posts.id, posts.content, posts.created_at, users.username, users.id AS uid 
-     FROM posts 
-     JOIN users ON posts.user_id = users.id 
-     ORDER BY posts.created_at DESC`,
-    [],
-    (err, rows) => {
-      let html = `<h2>Message Board</h2>
-        <a href="/logout">Log Out</a> | <a href="/profile">My Profile</a>
-        <form method="POST" action="/post">
-          <textarea name="content" required></textarea><br>
-          <button type="submit">Post</button>
-        </form><hr>`;
+  getSiteMessage((siteMessage) => {
+    db.all(
+      `SELECT posts.id, posts.content, posts.created_at, users.username, users.id AS uid 
+       FROM posts 
+       JOIN users ON posts.user_id = users.id 
+       ORDER BY posts.created_at DESC`,
+      [],
+      (err, rows) => {
+        let html = `<h2>Message Board</h2>
+          <a href="/logout">Log Out</a> | <a href="/profile">My Profile</a>
+          <form method="POST" action="/post">
+            <textarea name="content" required></textarea><br>
+            <button type="submit">Post</button>
+          </form>`;
+        if (siteMessage) html += `<div style="border:1px dashed red;padding:10px;margin:10px 0"><strong>Site Message:</strong> ${siteMessage}</div>`;
+        html += `<hr>`;
 
-      rows.forEach((row) => {
-        html += `<p><strong><a href="/user/${row.username}">${row.username}</a></strong> (${row.created_at}):<br>${row.content}`;
-        if (currentUser.id === row.uid) {
-          html += ` <form method="POST" action="/delete-post" style="display:inline">
-                      <input type="hidden" name="post_id" value="${row.id}" />
-                      <button type="submit">Delete</button>
-                    </form>`;
-        }
-        html += `</p><hr>`;
-      });
+        rows.forEach((row) => {
+          html += `<p><strong><a href="/user/${row.username}">${row.username}</a></strong> (${row.created_at}):<br>${row.content}`;
+          if (currentUser.id === row.uid) {
+            html += ` <form method="POST" action="/delete-post" style="display:inline">
+                        <input type="hidden" name="post_id" value="${row.id}" />
+                        <button type="submit">Delete</button>
+                      </form>`;
+          }
+          html += `</p><hr>`;
+        });
 
-      res.send(html);
-    }
-  );
+        res.send(html);
+      }
+    );
+  });
 });
 
 app.post('/post', (req, res) => {
@@ -131,92 +147,50 @@ app.post('/delete-post', (req, res) => {
   });
 });
 
-// Profile page
-app.get('/profile', (req, res) => {
-  if (!req.session.user) return res.redirect('/login');
-  const userId = req.session.user.id;
+app.get('/admin/console', (req, res) => {
+  if (!req.session.user || req.session.user.username !== 'chris') {
+    return res.send('Access denied');
+  }
+  res.send(`<h2>Admin Console</h2>
+    <form method="POST" action="/admin/console">
+      <input name="command" placeholder="Enter command" style="width:100%" required><br>
+      <button type="submit">Run</button>
+    </form>
+    <p><a href="/board">Back to Board</a></p>`);
+});
 
-  db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-    db.all('SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC', [userId], (err2, posts) => {
-      let html = `<h2>${user.username}'s Profile</h2>
-        <form method="POST" action="/update-bio">
-          Bio:<br><textarea name="bio">${user.bio}</textarea><br>
-          Avatar URL:<br><input name="avatar" value="${user.avatar}"/><br>
-          <button type="submit">Save Profile</button>
-        </form>
-        <form method="POST" action="/change-password">
-          <h3>Change Password</h3>
-          <input name="oldpass" placeholder="Old password" type="password" required /><br>
-          <input name="newpass" placeholder="New password" type="password" required /><br>
-          <button type="submit">Change Password</button>
-        </form>
-        <a href="/board">Back to Board</a>
-        <hr>`;
+app.post('/admin/console', (req, res) => {
+  if (!req.session.user || req.session.user.username !== 'chris') {
+    return res.send('Access denied');
+  }
 
-      posts.forEach((p) => {
-        html += `<p>${p.created_at}: ${p.content}</p><hr>`;
-      });
+  const cmd = req.body.command.trim();
 
-      res.send(html);
+  if (cmd.startsWith('SetMsg ')) {
+    const msg = cmd.substring(7).replace(/"/g, '');
+    db.run(`INSERT OR REPLACE INTO settings (key, value) VALUES ('site_message', ?)`, [msg], (err) => {
+      if (err) return res.send('Error setting message');
+      res.redirect('/admin/console');
     });
-  });
-});
-
-app.post('/update-bio', (req, res) => {
-  const { bio, avatar } = req.body;
-  db.run('UPDATE users SET bio = ?, avatar = ? WHERE id = ?', [bio, avatar, req.session.user.id], (err) => {
-    res.redirect('/profile');
-  });
-});
-
-app.post('/change-password', async (req, res) => {
-  const { oldpass, newpass } = req.body;
-  const uid = req.session.user.id;
-
-  db.get('SELECT password FROM users WHERE id = ?', [uid], async (err, row) => {
-    if (await bcrypt.compare(oldpass, row.password)) {
-      const hashed = await bcrypt.hash(newpass, 10);
-      db.run('UPDATE users SET password = ? WHERE id = ?', [hashed, uid], (err2) => {
-        res.redirect('/profile');
-      });
-    } else {
-      res.send('Wrong current password');
-    }
-  });
-});
-
-// View another user
-app.get('/user/:username', (req, res) => {
-  const username = req.params.username;
-
-  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
-    if (!user) return res.send('User not found');
-    db.all('SELECT * FROM posts WHERE user_id = ? ORDER BY created_at DESC', [user.id], (err2, posts) => {
-      let html = `<h2>${user.username}'s Public Profile</h2>`;
-      if (user.avatar) html += `<img src="${user.avatar}" width="100"><br>`;
-      html += `<p>${user.bio}</p><hr>`;
-
-      posts.forEach((p) => {
-        html += `<p>${p.created_at}: ${p.content}</p><hr>`;
-      });
-
-      res.send(html);
+  } else if (cmd.startsWith('administrate ')) {
+    const user = cmd.split(' ')[1];
+    db.run(`UPDATE users SET is_admin = 1 WHERE username = ?`, [user], (err) => {
+      if (err) return res.send('Error promoting user');
+      res.redirect('/admin/console');
     });
-  });
-});
-
-// Admin view of all users
-app.get('/admin/accounts', (req, res) => {
-  if (!req.session.user) return res.send('Not authorized');
-
-  db.all('SELECT username, created_at FROM users ORDER BY created_at DESC', [], (err, rows) => {
-    let html = `<h2>All Accounts</h2><a href="/board">Back</a><hr>`;
-    rows.forEach((user) => {
-      html += `<p>${user.username} - Joined: ${user.created_at}</p>`;
+  } else if (cmd.startsWith('unadministrate ')) {
+    const user = cmd.split(' ')[1];
+    db.run(`UPDATE users SET is_admin = 0 WHERE username = ?`, [user], (err) => {
+      if (err) return res.send('Error demoting user');
+      res.redirect('/admin/console');
     });
-    res.send(html);
-  });
+  } else {
+    res.send('Unknown command');
+  }
 });
+
+// (Keep the rest of your profile, post, and user routes unchanged)
+// ... (same as before)
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
