@@ -6,7 +6,12 @@ const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
-const db = new sqlite3.Database('./users.db');
+const fs = require('fs');
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+
+const db = new sqlite3.Database(path.join(dataDir, 'users.db'));
+
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(session({ secret: 'secret-key', resave: false, saveUninitialized: true }));
